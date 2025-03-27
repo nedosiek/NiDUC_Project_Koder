@@ -1,0 +1,245 @@
+def add_polynomials(self, polynomial1: list[int], polynomial2: list[int]
+) -> list[int]:
+
+    sum_polynomials = [polynomial1, polynomial2]
+    max_dlugosc = max(len(x) for x in sum_polynomials)
+
+    # wyrównujemy oba wielomiany żeby miały taką samą długość
+    # przez dopisanie reprezentacji 0 z lewej strony do mniejszego
+    for i in range(len(sum_polynomials)):
+        brakujace_zera = max_dlugosc - len(sum_polynomials[i])
+        sum_polynomials[i] = [64] * brakujace_zera + sum_polynomials[i]
+
+    wynik = []
+    # dla każdego symbolu (czyli potęgi alfy) odnajdujemy jej wartość w ciele
+    # i dodajemy modulo dwie reprezentacje alf przy tych samych potęgach do siebie
+    for i in range(len(sum_polynomials[0])):
+        suma = 0
+        for j in range(len(sum_polynomials)):
+            alfa = self.alfas[sum_polynomials[j][i]]
+            suma ^= int(str(self.pol_to_number(alfa)), 2)
+
+        # ponieważ dodaliśmy wartości alf, musimy dopisać do wielomianu wynikowego
+        # odnalezioną potęgę sumowanej wartości
+        wynik.append(self.find_alfa_power(bin(suma)[2:]))
+
+    return wynik
+
+
+
+def mul_polynomials(self, polynomial1: list[int], polynomial2: list[int]) -> list[int]:
+
+    sum_polynomials = list()
+
+    # na początku będziemy brać poszczególne symbole z drugiego wielomianu
+    # i przemnażając je przez wszystkie symbole pierwszego, otrzymamy listę
+    # wielomianów częściowych, które potem trzeba będzie dodać do jednego
+    for i, symbol in enumerate(polynomial2):
+        # mnożenie przez 0 nie ma sensu
+        if symbol == 64:
+            continue
+
+        # przemnożenie przez x do danej potęgi == przesunięcie w prawo
+        shift_amount = len(polynomial2) - 1 - i
+        help1 = polynomial1.copy()
+        for _ in range(shift_amount):
+            help1.append(64)
+
+        # po pomnożeniu przez x do danej potęgi, mnożymy alfy, czyli dodajemy ich potęgi
+        for j in range(len(help1)):
+            if help1[j] != 64:
+                help1[j] = self.add_alfa_powers(help1[j], symbol)
+        sum_polynomials.append(help1)
+
+    max_dlugosc = max(len(x) for x in sum_polynomials)
+
+    # wyrównaj długości wielomianów częściowych przed dodawaniem
+    for i in range(len(sum_polynomials)):
+        brakujace_zera = max_dlugosc - len(sum_polynomials[i])
+        sum_polynomials[i] = [64] * brakujace_zera + sum_polynomials[i]
+
+    wynik = []
+    # analogicznie jak dla sum_polynomials, dodajemy wielomiany częściowe do siebie
+    for i in range(len(sum_polynomials[0])):
+        suma = 0
+        for j in range(len(sum_polynomials)):
+            alfa = self.alfas[sum_polynomials[j][i]]
+            suma ^= int(str(self.pol_to_number(alfa)), 2)
+        wynik.append(self.find_alfa_power(bin(suma)[2:]))
+
+    return wynik
+
+
+
+# funkcja obliczania wielomianu generującego g(x)
+def generate_generating_polynomial(self, t: int) -> list[int]:
+    if 2 * t < 1:
+        raise ValueError("Power must be greater than or equal to 1")
+
+    generating_polynomial = [0, 1]
+    for i in range(2, 2 * t + 1):
+        term = [0, i]
+        generating_polynomial = self.mul_polynomials(generating_polynomial, term)
+        #print(generating_polynomial)
+    #print(generating_polynomial)
+    return generating_polynomial
+
+def code_vector(self, m: list[int], t: int):
+    if t < 1:
+        raise ValueError("Power must be greater than or equal to 1")
+
+    # mnożymy m(x) i x^power
+    # dodajemy 64 na koniec (64 reprezentacja 0 w ciele Galoa)
+    g = self.generate_generating_polynomial(t)
+    m += [64] * (2 * t)
+    r = self.div_polynomials(m, g)
+
+    code_vec = self.add_polynomials(m, r)
+
+    return code_vec
+
+
+
+
+
+
+
+
+import numpy as np
+
+galois_field = 64
+
+# Wielomian pierwotny dla GF(2^6): x^6 + x + 1
+primitive_poly = 0b1000011
+
+# Funkcja dla mnożenia dwóch elementów w GF(2^6)
+def gf_multiply(x, y):
+    result = 0
+    while y > 0:
+        if y & 1:  # Jeśli najmłodszy bit y == 1, dodaj x do wyniku
+            result ^= x
+        y >>= 1
+        x <<= 1
+        if x & 0b1000000:  # Jeśli x mieści w sobie 6 bitów, zredukuj jego modulo wielomianu pierwotnego
+            x ^= primitive_poly
+    return result
+
+
+# Zakres wartości (1..63) w GF(2^6) jako macierz
+table_add = [[0] * galois_field for _ in range(galois_field)]
+values = list(range(1, 64))
+# Tworzenie tabeli (64 x 64) poprzez mnożenie macierzy
+table_multi = np.zeros((63, 63), dtype=int)
+for i in range(63):
+    for j in range(63):
+        table_multi[i, j] = gf_multiply(values[i], values[j])
+# Tworzenie tabeli (64 x 64) poprzez dodawanie macierzy
+for i in range(galois_field):
+    for j in range(galois_field):
+        table_add[i][j] = i ^ j # funkcja XOR jako dodawanie liczb w GF(2^6)
+
+
+# Konwersja tabel na format binarny
+binary_table_multi = np.vectorize(lambda x: format(int(x), '06b'))(table_multi)
+binarny_table_add = np.vectorize(lambda x: format(int(x), '06b'))(table_add)
+
+# Zapis binarnych tabel do pliku CSV
+np.savetxt("binary_table_multi.csv", binary_table_multi, delimiter=", ", fmt="%s")
+np.savetxt("binary_table_add.csv", binarny_table_add, delimiter=", ", fmt="%s")
+
+
+# mnozenie wielomianow i uzyc tego do wyznaczenia wielomianu generujacego kodu RS - uzywajac tych tabelek
+# zrobic implementacje kodera - opis analogiczny do BCH Muchnacki
+
+def pol_to_number(self, polynomial: list[int]) -> int:
+    s = map(str, polynomial)
+    s = "".join(s)
+    return int(s)
+
+def add_polynomials(self, polynomial1: list[int], polynomial2: list[int]
+) -> list[int]:
+
+    sum_polynomials = [polynomial1, polynomial2]
+    max_dlugosc = max(len(x) for x in sum_polynomials)
+
+    # wyrównujemy oba wielomiany żeby miały taką samą długość
+    # przez dopisanie reprezentacji 0 z lewej strony do mniejszego
+    for i in range(len(sum_polynomials)):
+        brakujace_zera = max_dlugosc - len(sum_polynomials[i])
+        sum_polynomials[i] = [64] * brakujace_zera + sum_polynomials[i]
+
+    wynik = []
+    # dla każdego symbolu (czyli potęgi alfy) odnajdujemy jej wartość w ciele
+    # i dodajemy modulo dwie reprezentacje alf przy tych samych potęgach do siebie
+    for i in range(len(sum_polynomials[0])):
+        suma = 0
+        for j in range(len(sum_polynomials)):
+            alfa = self.alfas[sum_polynomials[j][i]]
+            suma ^= int(str(self.pol_to_number(alfa)), 2)
+
+        # ponieważ dodaliśmy wartości alf, musimy dopisać do wielomianu wynikowego
+        # odnalezioną potęgę sumowanej wartości
+        wynik.append(self.find_alfa_power(bin(suma)[2:]))
+
+    return wynik
+
+
+
+def mul_polynomials(self, polynomial1: list[int], polynomial2: list[int]) -> list[int]:
+
+    sum_polynomials = list()
+
+    # na początku będziemy brać poszczególne symbole z drugiego wielomianu
+    # i przemnażając je przez wszystkie symbole pierwszego, otrzymamy listę
+    # wielomianów częściowych, które potem trzeba będzie dodać do jednego
+    for i, symbol in enumerate(polynomial2):
+        # mnożenie przez 0 nie ma sensu
+        if symbol == 64:
+            continue
+
+        # przemnożenie przez x do danej potęgi == przesunięcie w prawo
+        shift_amount = len(polynomial2) - 1 - i
+        help1 = polynomial1.copy()
+        for _ in range(shift_amount):
+            help1.append(64)
+
+        # po pomnożeniu przez x do danej potęgi, mnożymy alfy, czyli dodajemy ich potęgi
+        for j in range(len(help1)):
+            if help1[j] != 64:
+                help1[j] = self.add_alfa_powers(help1[j], symbol)
+        sum_polynomials.append(help1)
+
+    max_dlugosc = max(len(x) for x in sum_polynomials)
+
+    # wyrównaj długości wielomianów częściowych przed dodawaniem
+    for i in range(len(sum_polynomials)):
+        brakujace_zera = max_dlugosc - len(sum_polynomials[i])
+        sum_polynomials[i] = [64] * brakujace_zera + sum_polynomials[i]
+
+    wynik = []
+    # analogicznie jak dla sum_polynomials, dodajemy wielomiany częściowe do siebie
+    for i in range(len(sum_polynomials[0])):
+        suma = 0
+        for j in range(len(sum_polynomials)):
+            alfa = self.alfas[sum_polynomials[j][i]]
+            suma ^= int(str(self.pol_to_number(alfa)), 2)
+        wynik.append(self.find_alfa_power(bin(suma)[2:]))
+
+    return wynik
+
+
+
+# funkcja obliczania wielomianu generującego g(x)
+def generate_generating_polynomial(self, t: int) -> list[int]:
+    if 2 * t < 1:
+        raise ValueError("Power must be greater than or equal to 1")
+
+    generating_polynomial = [0, 1]
+    for i in range(2, 2 * t + 1):
+        term = [0, i]
+        generating_polynomial = self.mul_polynomials(generating_polynomial, term)
+        #print(generating_polynomial)
+    print(generating_polynomial)
+    return generating_polynomial
+
+

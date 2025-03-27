@@ -1,0 +1,363 @@
+from typing import Optional, Union
+
+gallois_power = 6
+# polynomial_inform = [0, 0, 0, 0, 0, 1, ?]
+
+
+# implementation of binary Gallois field
+# default power was set by the project requirements
+class GF:
+
+    def __init__(self, number: Union[int, bytes], power: Optional[int] = gallois_power):
+        self.power = power
+
+        if number >= 2**power:
+            raise ValueError("too big number for the GF(2**{})".format(self.power))
+
+        self.number = number
+        self.alfas = dict()
+        for i in range(2**self.power - 1):
+            self.alfas[i] = self.generate_alfa(i)
+
+        # representing zero as max power value in field
+        self.alfas[2**self.power] = self.generate_alfa(2**self.power)
+
+    @staticmethod
+    def generate_symbols(power: Optional[int] = gallois_power) -> list[int]:
+        return [i for i in range(0, 2**power - 1)]
+
+    def pol_to_number(self, polynomial: list[int]) -> int:
+        s = map(str, polynomial)
+        s = "".join(s)
+        return int(s)
+
+    def number_to_pol(self, number: int) -> list[int]:
+        n = bin(number)
+        return [c for c in n[2:]]
+
+    # TODO: generate polynomial for any given GF(2^x)
+    # it now gives the x^6 + x + 1 for the GF(2^6)
+    def primitive(self) -> int:
+        return 0b100011
+
+    def primitive_pol(self) -> list[int]:
+        return [1, 0, 0, 0, 0, 1, 1]
+
+    def is_alfa_zero(self, alfa_power: int) -> bool:
+        return alfa_power == 2**self.power
+
+    def generate_alfa(self, power: int) -> list[int]:
+
+        if power in self.alfas:
+            return self.alfas[power]
+
+        if self.is_alfa_zero(power):
+            return [0 for _ in range(self.power)]
+
+        if power == 2**self.power - 1:
+            raise ValueError("alfa with such power doesnt exists")
+
+        if power < self.power:
+            output = [0 for _ in range(self.power)]
+
+            output[-(power + 1)] = 1
+            return output
+
+        pol1 = [1]
+        for _ in range(power):
+            pol1.append(0)
+
+        primitive = self.primitive_pol()
+        primitive = [0] * (power - (len(primitive) - 1)) + primitive
+        reszta = pol1[:]
+        diff_powers = abs(pol1.index(1) - primitive.index(1))
+
+        while diff_powers >= 0:
+
+            partial = [0] * (power + 1)
+
+            for i in range(len(partial) - diff_powers):
+                partial[i] = primitive[i + diff_powers]
+
+            reszta = [a ^ b for a, b in zip(partial, reszta)]
+
+            if all(coeff == 0 for coeff in reszta):
+                break
+
+            diff_powers = primitive.index(1) - reszta.index(1)
+
+        self.alfas[power] = reszta[len(reszta) - self.power :]
+        return self.alfas[power]
+
+    def find_alfa_power(self, alfa_value):
+        a = self.alfas
+        for key, val in self.alfas.items():
+            h = self.pol_to_number(val)
+            if h == int(alfa_value):
+                return key
+
+    def find_alfa_power1(self, alfa_value: int):
+        for key, val in self.alfas.items():
+            h = int(str(self.pol_to_number(val)), 2)
+            if h == int(alfa_value):
+                return key
+
+    def mul_polynomials(
+        self, polynomial1: list[int], polynomial2: list[int]
+    ) -> list[int]:
+
+        # print(polynomial1)
+        # print(polynomial2)
+        # print("-------------------------------------")
+        sum_polynomials = list()
+        for i, symbol in enumerate(polynomial2):
+            if symbol == 64:
+                continue
+
+            # przemnożenie przez x do danej potęgi == przesunięcie w prawo
+            shift_amount = len(polynomial2) - 1 - i
+            help1 = polynomial1.copy()
+            for _ in range(shift_amount):
+                help1.append(64)
+
+            for j in range(len(help1)):
+                if help1[j] != 64:
+                    help1[j] = self.add_alfa_powers(help1[j], symbol)
+
+            sum_polynomials.append(help1)
+
+        max_dlugosc = max(len(x) for x in sum_polynomials)
+
+        # Dopisz zera do każdego wielomianu w sum_polynomials
+        for i in range(len(sum_polynomials)):
+            brakujace_zera = max_dlugosc - len(sum_polynomials[i])
+            sum_polynomials[i] = [64] * brakujace_zera + sum_polynomials[i]
+
+        wynik = []
+        for i in range(len(sum_polynomials[0])):
+            suma = 0
+            for j in range(len(sum_polynomials)):
+                alfa = self.alfas[sum_polynomials[j][i]]
+                suma ^= int(str(self.pol_to_number(alfa)), 2)
+
+            # tutaj suma to nie wykładnik alfy, ale wartość alfy
+            # dla podanej wartości, chcemy znowu żeby współczynniki reprezentowały potęgi alfy
+            wynik.append(self.find_alfa_power(bin(suma)[2:]))
+
+        return wynik
+
+    def add_alfa_powers(self, alfa_power1: int, alfa_power2: int) -> int:
+
+        if alfa_power1 > 2**self.power:
+            raise ValueError(f"alfa power1 higher than {2**self.power}")
+
+        if alfa_power2 > 2**self.power:
+            raise ValueError(f"alfa power2 higher than {2**self.power}")
+
+        if self.is_alfa_zero(alfa_power1):
+            return 64
+        elif self.is_alfa_zero(alfa_power2):
+            return 64
+
+        # return (alfa_power1 + alfa_power2) % (2**self.power - 2)
+        return (alfa_power1 + alfa_power2) % (2**self.power - 1)
+
+    @staticmethod
+    def calculate_polynomial(
+        polynomial: int, x: int, power: Optional[int] = gallois_power
+    ) -> int:
+
+        if x not in range(0, 2**power - 1):
+            raise ValueError(
+                "provided x in polynomial calculation should be valid symbol in this GF field"
+            )
+
+        # only the remainder at x^0 matters
+        if x == 0:
+            return polynomial & 1 << 0
+
+        sum = 0
+        i = 0
+        while polynomial:
+
+            if i == 0:
+                sum += polynomial & 1
+            else:
+                base = x * (polynomial & 1)
+                pow = base**i
+                sum += pow % 2**power
+
+            polynomial >>= 1
+            i += 1
+
+        return sum
+
+    # symbol * x = 1
+    # find x
+    def mul_inverse(self) -> int:
+
+        for x in self.generate_symbols(self.power):
+            if (self.number * x) % 2**self.power == 1:
+                return x
+        return None
+
+    # symbol + x = 0
+    # find x
+    def add_inverse(self) -> int:
+
+        for x in self.generate_symbols(self.power):
+            if (self.number + x) % 2**self.power == 0:
+                return x
+        return None
+
+    # funkcja obliczania wielomianu generającego g(x)
+    def generate_generating_polynomial(self, t: int) -> list[int]:
+        if 2 * t < 1:
+            raise ValueError("Power must be greater than or equal to 1")
+
+        generating_polynomial = [0, 1]
+        for i in range(2, 2 * t + 1):
+            term = [0, i]
+            generating_polynomial = self.mul_polynomials(generating_polynomial, term)
+
+        return generating_polynomial
+
+    def add_polynomials(
+        self, polynomial1: list[int], polynomial2: list[int]
+    ) -> list[int]:
+
+        sum_polynomials = [polynomial1, polynomial2]
+        max_dlugosc = max(len(x) for x in sum_polynomials)
+
+        # Dopisz zera do każdego wielomianu w sum_polynomials
+        for i in range(len(sum_polynomials)):
+            brakujace_zera = max_dlugosc - len(sum_polynomials[i])
+            sum_polynomials[i] = [64] * brakujace_zera + sum_polynomials[i]
+
+        wynik = []
+        for i in range(len(sum_polynomials[0])):
+            suma = 0
+            for j in range(len(sum_polynomials)):
+                alfa = self.alfas[sum_polynomials[j][i]]
+                suma ^= int(str(self.pol_to_number(alfa)), 2)
+
+            wynik.append(self.find_alfa_power(bin(suma)[2:]))
+        return wynik
+
+    def code_vector(self, m: list[int], t: int):
+        if t < 1:
+            raise ValueError("Power must be greater than or equal to 1")
+
+        # mnożymy m(x) i x^power
+        # dodajemy 64 na koniec (64 reprezentacja 0 w ciele Galua)
+
+        g = self.generate_generating_polynomial(t)
+        m += [64] * (2 * t)
+        r = self.div_polynomials(m, g)
+
+        code_vec = self.add_polynomials(m, r)
+
+        return code_vec
+
+    # obliczanie reszty r(x) z dzielenia przez g(x)
+    def div_polynomials(
+        self, polynomial1: list[int], polynomial2: list[int]
+    ) -> list[int]:
+
+        for i in range(len(polynomial2)):
+            if polynomial2[0] == 64:
+                polynomial2.pop(0)
+            else:
+                break
+
+        # cała część z dzielenia
+
+        cala_czesc = [64] * (len(polynomial1) - len(polynomial2) + 1)
+
+        # Liczba cyfr w całą części odpowiedzi zależy od rozmiarów wielomianów
+        for i in range(len(polynomial1) - len(polynomial2) + 1):
+            wiel_dla_mnozenia = [64] * len(cala_czesc)
+            next_coeff = polynomial1[i]
+            if next_coeff == 64:
+                continue
+
+            if next_coeff < polynomial2[0]:
+                if polynomial2[0] == 64:
+                    continue
+                else:
+                    next_coeff = (63 + polynomial1[i] - polynomial2[0]) % 63
+            else:
+                next_coeff -= polynomial2[0]
+
+            # Jeśli pierszy współczynnik przy pierwszym wielomiani
+            # mniejszy od współczynnik a przy drudim
+            # if next_coeff < polynomial2[0]:
+            #     next_coeff ^= 62
+
+            # next_coeff -= polynomial2[0]
+            cala_czesc[i] = next_coeff
+            if i != 0:
+                wiel_dla_mnozenia[i] = cala_czesc[i]
+                rezult_mnozenia = self.mul_polynomials(wiel_dla_mnozenia, polynomial2)
+                polynomial1 = self.add_polynomials(rezult_mnozenia, polynomial1)
+            else:
+                rezult_mnozenia = self.mul_polynomials(cala_czesc, polynomial2)
+                polynomial1 = self.add_polynomials(rezult_mnozenia, polynomial1)
+        reszta = polynomial1
+
+        return reszta
+
+    def div_polynomials_cala(
+        self, polynomial1: list[int], polynomial2: list[int]
+    ) -> list[int]:
+
+        for i in range(len(polynomial2)):
+            if polynomial2[0] == 64:
+                polynomial2.pop(0)
+            else:
+                break
+        cala_czesc = [64] * (len(polynomial1) - len(polynomial2) + 1)
+
+        # Liczba cyfr w całą części odpowiedzi zależy od rozmiarów wielomianów
+        for i in range(len(polynomial1) - len(polynomial2) + 1):
+            if polynomial1 == [64] * len(polynomial1):
+                break
+            wiel_dla_mnozenia = [64] * len(cala_czesc)
+            next_coeff = polynomial1[i]
+            if next_coeff == 64:
+                continue
+            # Jeśli pierszy współczynnik przy pierwszym wielomiani
+            # mniejszy od współczynnik a przy drudim
+            if next_coeff < polynomial2[0]:
+                if polynomial2[0] == 64:
+                    continue
+                else:
+                    next_coeff = (63 + polynomial1[i] - polynomial2[0]) % 63
+            else:
+                next_coeff -= polynomial2[0]
+
+            cala_czesc[i] = next_coeff
+            if i != 0:
+                wiel_dla_mnozenia[i] = cala_czesc[i]
+                rezult_mnozenia = self.mul_polynomials(wiel_dla_mnozenia, polynomial2)
+                polynomial1 = self.add_polynomials(rezult_mnozenia, polynomial1)
+            else:
+                rezult_mnozenia = self.mul_polynomials(cala_czesc, polynomial2)
+                polynomial1 = self.add_polynomials(rezult_mnozenia, polynomial1)
+        reszta = polynomial1
+
+        return cala_czesc
+
+    def __add__(self, o):
+        return self.number ^ o.number
+
+    def __sub__(self, o):
+        return self.number ^ o.number
+
+    def __mul__(self, o):
+        return self.number & o.number
+
+# gf = GF(6)
+# # k = gf.div_polynomials_cala([0, 64, 64, 64, 64, 64, 64], [64, 64, 64, 2, 64, 21, 64])
+# k = gf.div_polynomials([0, 64, 64, 64, 64, 64, 64], [1, 55, 32, 14, 31, 44])
+# print(k)
